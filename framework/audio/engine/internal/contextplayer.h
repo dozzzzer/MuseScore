@@ -20,37 +20,35 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-#ifndef MUSE_AUDIO_ENGINEPLAYER_H
-#define MUSE_AUDIO_ENGINEPLAYER_H
+#pragma once
 
+#include "global/types/retval.h"
+#include "global/async/channel.h"
 #include "global/async/asyncable.h"
-
-#include "modularity/ioc.h"
-#include "../iaudioengine.h"
 
 #include "../iengineplayer.h"
 #include "../iplayhead.h"
 
-#include "igettracks.h"
+#include "igettracksource.h"
 
 namespace muse::audio::engine {
-class EnginePlayer : public IEnginePlayer, public IPlayhead, public async::Asyncable
+class ContextPlayer : public IEnginePlayer, public IPlayhead, public async::Asyncable
 {
-    GlobalInject<engine::IAudioEngine> audioEngine;
-
 public:
-    explicit EnginePlayer(IGetTracks* getTracks);
+    explicit ContextPlayer(IGetTrackSource* getTracks);
 
     async::Promise<Ret> prepareToPlay() override;
 
     void play(const secs_t delay = 0) override;
-    void seek(const secs_t newPosition, const bool flushSound = true) override;
+    void seek(const TimePosition& position, const bool flushSound = true) override;
     void stop() override;
     void pause() override;
     void resume(const secs_t delay = 0) override;
 
     PlaybackStatus playbackStatus() const override;
     async::Channel<PlaybackStatus> playbackStatusChanged() const override;
+    bool isActive() const override;
+    async::Channel<bool> isActiveChanged() const override;
 
     secs_t duration() const override;
     void setDuration(const secs_t duration) override;
@@ -61,34 +59,42 @@ public:
     secs_t playbackPosition() const override;
     async::Channel<secs_t> playbackPositionChanged() const override;
 
+    // IPlayhead interface
+    void forward(const TimePosition& delta) override;
+    const TimePosition& currentPosition() const override;
+
 private:
 
     void onStatusChanged(const PlaybackStatus status);
 
     // Processing thread functions
-    // IPlayhead interface
-    void forward(const TimePosition& delta) override;
-    const TimePosition& currentPosition() const override;
-
     TimePosition proc_onTimeChanged(const TimePosition& delta);
     // ----------------------------
 
-    enum class TimeEvent {
+    enum class TimeEventType {
+        Undefined,
         PlaybackEnded,
         CountDownEnded,
         LoopEnded,
     };
+
+    struct TimeEvent {
+        TimeEventType type = TimeEventType::Undefined;
+        TimePosition position;
+    };
+
     void onTimeEvent(const TimeEvent event);
 
-    void seekAllTracks(const secs_t newPosition);
+    void seekAllTracks(const TimePosition& position);
     void flushAllTracks();
 
     using AllTracksReadyCallback = std::function<void ()>;
     void prepareAllTracksToPlay(AllTracksReadyCallback allTracksReadyCallback);
 
-    IGetTracks* m_getTracks = nullptr;
+    IGetTrackSource* m_trackSource = nullptr;
 
     ValCh<PlaybackStatus> m_status;
+    ValCh<bool> m_isActive;
 
     TimePosition m_currentPosition;
     async::Channel<secs_t> m_timeChanged;
@@ -101,8 +107,6 @@ private:
     async::Channel<TimeEvent> m_timeEvent;
 
     bool m_flushSoundOnSeek = true;
-    std::set<TrackId> m_notYetReadyToPlayTrackIdSet;
+    std::set<AudioSourceNodePtr> m_notYetReadyToPlayTracks;
 };
 }
-
-#endif // MUSE_AUDIO_ENGINEPLAYER_H

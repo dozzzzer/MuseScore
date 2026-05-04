@@ -25,10 +25,11 @@
 
 #include "global/modularity/ioc.h"
 #include "audio/common/rpc/irpcchannel.h"
-#include "../iaudioengine.h"
-#include "../iengineplayback.h"
+#include "iaudioengine.h"
 #include "../isoundfontrepository.h"
 #include "../iaudioengineconfiguration.h"
+
+#include "iaudiocontext.h"
 
 namespace muse::audio::engine {
 class EngineRpcController : public async::Asyncable
@@ -37,7 +38,6 @@ class EngineRpcController : public async::Asyncable
     GlobalInject<synth::ISoundFontRepository> soundFontRepository;
     GlobalInject<rpc::IRpcChannel> channel;
     GlobalInject<IAudioEngine> audioEngine;
-    GlobalInject<IEnginePlayback> playback;
 
 public:
     EngineRpcController() = default;
@@ -47,11 +47,13 @@ public:
 
 private:
 
-    void onLongMethod(rpc::Method method, const rpc::Handler& h);
-    void onQuickMethod(rpc::Method method, const rpc::Handler& h);
-    void onMethod(OperationType type, rpc::Method method, const rpc::Handler& h);
+    std::shared_ptr<IAudioContext> audioContext(rpc::CtxId ctxId) const;
 
-    std::vector<rpc::Method> m_usedMethods;
+    void onLongRequest(rpc::CtxId ctxId, rpc::MsgCode code, const rpc::RequestHandler& h);
+    void onQuickRequest(rpc::CtxId ctxId, rpc::MsgCode code, const rpc::RequestHandler& h);
+    void onRequest(OperationType type, rpc::CtxId ctxId, rpc::MsgCode code, const rpc::RequestHandler& h);
+
+    std::vector<rpc::MsgKey> m_usedRequests;
     std::atomic<bool> m_terminated = false;
 
     struct PendingTrack {

@@ -22,8 +22,10 @@
 #pragma once
 
 #include <functional>
+#include <tuple>
 
 #include "global/modularity/imoduleinterface.h"
+#include "global/modularity/ioc.h"
 
 #include "global/types/bytearray.h"
 #include "global/async/channel.h"
@@ -33,15 +35,30 @@
 
 namespace muse::audio::rpc {
 using CallId = uint64_t;
-using CtxId = uint8_t;
+using CtxId = uint16_t;
+constexpr CtxId GLOBAL_CTX_ID = 0;
 
-enum class Method {
+inline CtxId ctxId(const muse::modularity::ContextPtr& ctx)
+{
+    IF_ASSERT_FAILED(ctx) {
+        return GLOBAL_CTX_ID;
+    }
+    IF_ASSERT_FAILED(ctx->id > 0) {
+        return GLOBAL_CTX_ID;
+    }
+    return static_cast<CtxId>(ctx->id);
+}
+
+enum class MsgCode {
     Undefined = 0,
 
     // Init / Deinit
-    EngineRunning,
     EngineInit,
+    EngineRunning, // notification
     EngineDeinit,
+
+    ContextInit,
+    ContextDeinit,
 
     // Config
     EngineConfigChanged,
@@ -116,88 +133,113 @@ enum class Method {
 
     // Transport
     TransportEventReceived,
+
+    // Streams
+    FirstStream = 100,
+    PlaybackDataMainStream,
+    PlaybackDataOffStream,
+    AudioSignalStream,
+    AudioMasterSignalStream,
+    PlaybackStatusStream,
+    PlaybackPositionStream,
+    InputProcessingProgressStream,
+    SaveSoundTrackProgressStream
 };
 
-inline std::string to_string(Method m)
+inline std::string to_string(MsgCode m)
 {
     switch (m) {
-    case Method::Undefined: return "Undefined";
+    case MsgCode::Undefined: return "Undefined";
 
     // Init / Deinit
-    case Method::EngineRunning: return "EngineRunning";
-    case Method::EngineInit: return "EngineInit";
-    case Method::EngineDeinit: return "EngineDeinit";
+    case MsgCode::EngineRunning: return "EngineRunning";
+    case MsgCode::EngineInit: return "EngineInit";
+    case MsgCode::EngineDeinit: return "EngineDeinit";
+
+    case MsgCode::ContextInit: return "ContextInit";
+    case MsgCode::ContextDeinit: return "ContextDeinit";
 
     // Config
-    case Method::EngineConfigChanged: return "EngineConfigChanged";
+    case MsgCode::EngineConfigChanged: return "EngineConfigChanged";
 
     // AudioEngine
-    case Method::SetOutputSpec: return "SetOutputSpec";
+    case MsgCode::SetOutputSpec: return "SetOutputSpec";
 
     // Tracks
-    case Method::RemoveTrack: return "RemoveTrack";
-    case Method::RemoveAllTracks: return "RemoveAllTracks";
-    case Method::GetTrackIdList: return "GetTrackIdList";
-    case Method::GetTrackName: return "GetTrackName";
-    case Method::AddTrackWithPlaybackData: return "AddTrackWithPlaybackData";
-    case Method::AddTrackWithIODevice: return "AddTrackWithIODevice";
-    case Method::AddAuxTrack: return "AddAuxTrack";
-    case Method::TrackAdded: return "TrackAdded";
-    case Method::TrackRemoved: return "TrackRemoved";
+    case MsgCode::RemoveTrack: return "RemoveTrack";
+    case MsgCode::RemoveAllTracks: return "RemoveAllTracks";
+    case MsgCode::GetTrackIdList: return "GetTrackIdList";
+    case MsgCode::GetTrackName: return "GetTrackName";
+    case MsgCode::AddTrackWithPlaybackData: return "AddTrackWithPlaybackData";
+    case MsgCode::AddTrackWithIODevice: return "AddTrackWithIODevice";
+    case MsgCode::AddAuxTrack: return "AddAuxTrack";
+    case MsgCode::TrackAdded: return "TrackAdded";
+    case MsgCode::TrackRemoved: return "TrackRemoved";
 
-    case Method::GetAvailableInputResources: return "GetAvailableInputResources";
-    case Method::GetAvailableSoundPresets: return "GetAvailableSoundPresets";
+    case MsgCode::GetAvailableInputResources: return "GetAvailableInputResources";
+    case MsgCode::GetAvailableSoundPresets: return "GetAvailableSoundPresets";
 
-    case Method::GetInputParams: return "GetInputParams";
-    case Method::SetInputParams: return "SetInputParams";
-    case Method::GetInputProcessingProgress: return "GetInputProcessingProgress";
-    case Method::InputParamsChanged: return "InputParamsChanged";
+    case MsgCode::GetInputParams: return "GetInputParams";
+    case MsgCode::SetInputParams: return "SetInputParams";
+    case MsgCode::GetInputProcessingProgress: return "GetInputProcessingProgress";
+    case MsgCode::InputParamsChanged: return "InputParamsChanged";
 
-    case Method::ProcessInput: return "ProcessInput";
+    case MsgCode::ProcessInput: return "ProcessInput";
 
-    case Method::ClearCache: return "ClearCache";
-    case Method::ClearSources: return "ClearSources";
+    case MsgCode::ClearCache: return "ClearCache";
+    case MsgCode::ClearSources: return "ClearSources";
 
     // Play
-    case Method::PrepareToPlay: return "PrepareToPlay";
-    case Method::Play: return "Play";
-    case Method::Seek: return "Seek";
-    case Method::Stop: return "Stop";
-    case Method::Pause: return "Pause";
-    case Method::Resume: return "Resume";
-    case Method::SetDuration: return "SetDuration";
-    case Method::SetLoop: return "SetLoop";
-    case Method::ResetLoop: return "ResetLoop";
-    case Method::GetPlaybackStatus: return "GetPlaybackStatus";
-    case Method::GetPlaybackPosition: return "GetPlaybackPosition";
+    case MsgCode::PrepareToPlay: return "PrepareToPlay";
+    case MsgCode::Play: return "Play";
+    case MsgCode::Seek: return "Seek";
+    case MsgCode::Stop: return "Stop";
+    case MsgCode::Pause: return "Pause";
+    case MsgCode::Resume: return "Resume";
+    case MsgCode::SetDuration: return "SetDuration";
+    case MsgCode::SetLoop: return "SetLoop";
+    case MsgCode::ResetLoop: return "ResetLoop";
+    case MsgCode::GetPlaybackStatus: return "GetPlaybackStatus";
+    case MsgCode::GetPlaybackPosition: return "GetPlaybackPosition";
 
     // Output
-    case Method::GetOutputParams: return "GetOutputParams";
-    case Method::SetOutputParams: return "SetOutputParams";
-    case Method::GetMasterOutputParams: return "GetMasterOutputParams";
-    case Method::SetMasterOutputParams: return "SetMasterOutputParams";
-    case Method::ClearMasterOutputParams: return "ClearMasterOutputParams";
-    case Method::OutputParamsChanged: return "OutputParamsChanged";
-    case Method::MasterOutputParamsChanged: return "MasterOutputParamsChanged";
+    case MsgCode::GetOutputParams: return "GetOutputParams";
+    case MsgCode::SetOutputParams: return "SetOutputParams";
+    case MsgCode::GetMasterOutputParams: return "GetMasterOutputParams";
+    case MsgCode::SetMasterOutputParams: return "SetMasterOutputParams";
+    case MsgCode::ClearMasterOutputParams: return "ClearMasterOutputParams";
+    case MsgCode::OutputParamsChanged: return "OutputParamsChanged";
+    case MsgCode::MasterOutputParamsChanged: return "MasterOutputParamsChanged";
 
-    case Method::GetSignalChanges: return "GetSignalChanges";
-    case Method::GetMasterSignalChanges: return "GetMasterSignalChanges";
+    case MsgCode::GetSignalChanges: return "GetSignalChanges";
+    case MsgCode::GetMasterSignalChanges: return "GetMasterSignalChanges";
 
-    case Method::GetAvailableOutputResources: return "GetAvailableOutputResources";
+    case MsgCode::GetAvailableOutputResources: return "GetAvailableOutputResources";
 
-    case Method::SaveSoundTrack: return "SaveSoundTrack";
-    case Method::AbortSavingAllSoundTracks: return "AbortSavingAllSoundTracks";
-    case Method::GetSaveSoundTrackProgress: return "GetSaveSoundTrackProgress";
+    case MsgCode::SaveSoundTrack: return "SaveSoundTrack";
+    case MsgCode::AbortSavingAllSoundTracks: return "AbortSavingAllSoundTracks";
+    case MsgCode::GetSaveSoundTrackProgress: return "GetSaveSoundTrackProgress";
 
-    case Method::ClearAllFx: return "ClearAllFx";
+    case MsgCode::ClearAllFx: return "ClearAllFx";
 
     // SoundFont
-    case Method::LoadSoundFonts: return "LoadSoundFonts";
-    case Method::AddSoundFont: return "AddSoundFont";
-    case Method::AddSoundFontData: return "AddSoundFontData";
+    case MsgCode::LoadSoundFonts: return "LoadSoundFonts";
+    case MsgCode::AddSoundFont: return "AddSoundFont";
+    case MsgCode::AddSoundFontData: return "AddSoundFontData";
 
     // Transport
-    case Method::TransportEventReceived: return "TransportEventReceived";
+    case MsgCode::TransportEventReceived: return "TransportEventReceived";
+
+    // Streams
+    case MsgCode::FirstStream: return "FirstStream";
+    case MsgCode::PlaybackDataMainStream: return "PlaybackDataMainStream";
+    case MsgCode::PlaybackDataOffStream: return "PlaybackDataOffStream";
+    case MsgCode::AudioSignalStream: return "AudioSignalStream";
+    case MsgCode::AudioMasterSignalStream: return "AudioMasterSignalStream";
+    case MsgCode::PlaybackStatusStream: return "PlaybackStatusStream";
+    case MsgCode::PlaybackPositionStream: return "PlaybackPositionStream";
+    case MsgCode::InputProcessingProgressStream: return "InputProcessingProgressStream";
+    case MsgCode::SaveSoundTrackProgressStream: return "SaveSoundTrackProgressStream";
     }
 
     assert(false && "unknown enum value");
@@ -209,6 +251,7 @@ enum class MsgType {
     Notification,
     Request,
     Response,
+    ResponseDelayed,
     Stream
 };
 
@@ -219,6 +262,7 @@ inline std::string to_string(MsgType t)
     case MsgType::Notification: return "Notification";
     case MsgType::Request: return "Request";
     case MsgType::Response: return "Response";
+    case MsgType::ResponseDelayed: return "ResponseDelayed";
     case MsgType::Stream: return "Stream";
     }
 
@@ -229,49 +273,29 @@ inline std::string to_string(MsgType t)
 struct Msg {
     CallId callId = 0;
     CtxId ctxId = 0;   // 0 - global, >0 - contextual
-    Method method = Method::Undefined;
+    MsgCode code = MsgCode::Undefined;
     MsgType type = MsgType::Undefined;
     ByteArray data;
 };
 
-using Handler = std::function<void (const Msg& msg)>;
+struct MsgKey {
+    CtxId ctxId = 0;
+    MsgCode code = MsgCode::Undefined;
 
-// stream
-enum class StreamName {
-    Undefined = 100,
-
-    PlaybackDataMainStream,
-    PlaybackDataOffStream,
-
-    AudioSignalStream,
-    AudioMasterSignalStream,
-
-    PlaybackStatusStream,
-    PlaybackPositionStream,
-
-    InputProcessingProgressStream,
-    SaveSoundTrackProgressStream
-};
-
-inline std::string to_string(StreamName n)
-{
-    switch (n) {
-    case StreamName::Undefined: return "Undefined";
-    case StreamName::PlaybackDataMainStream: return "PlaybackDataMainStream";
-    case StreamName::PlaybackDataOffStream: return "PlaybackDataOffStream";
-    case StreamName::AudioSignalStream: return "AudioSignalStream";
-    case StreamName::AudioMasterSignalStream: return "AudioMasterSignalStream";
-    case StreamName::PlaybackStatusStream: return "PlaybackStatusStream";
-    case StreamName::PlaybackPositionStream: return "PlaybackPositionStream";
-    case StreamName::InputProcessingProgressStream: return "InputProcessingProgressStream";
-    case StreamName::SaveSoundTrackProgressStream: return "SaveSoundTrackProgressStream";
+    bool operator==(const MsgKey& other) const
+    {
+        return ctxId == other.ctxId && code == other.code;
     }
 
-    assert(false && "unknown enum value");
-    return std::to_string(static_cast<int>(n));
-}
+    bool operator<(const MsgKey& other) const
+    {
+        return std::tie(ctxId, code) < std::tie(other.ctxId, other.code);
+    }
+};
 
-using StreamId = uint32_t;
+using StreamId = CallId;
+using StreamName = MsgCode;
+using StreamMsg = Msg;
 
 inline StreamId& last_stream_id()
 {
@@ -290,14 +314,7 @@ inline StreamId new_stream_id()
     return last_stream_id();
 }
 
-struct StreamMsg {
-    CtxId ctxId = 0;   // 0 - global, >0 - contextual
-    StreamName name = StreamName::Undefined;
-    StreamId streamId = 0;
-    ByteArray data;
-};
-
-using StreamHandler = std::function<void (const StreamMsg& msg)>;
+using StreamHandler = std::function<void (const Msg& msg)>;
 
 enum class StreamType {
     Undefined = 0,
@@ -365,6 +382,10 @@ public:
     virtual void onStream(StreamId id, StreamHandler h) = 0;
 };
 
+using RequestHandler = std::function<Msg (const Msg& msg)>;
+using ResponseHandler = std::function<void (const Msg& msg)>;
+using NotificationHandler = std::function<void (const Msg& msg)>;
+
 class IRpcChannel : MODULE_GLOBAL_INTERFACE, public IStreamRpcChannel
 {
     INTERFACE_ID(IRpcChannel)
@@ -376,9 +397,9 @@ public:
 
     virtual void process() = 0;
 
-    virtual void send(const Msg& msg, const Handler& onResponse = nullptr) = 0;
-    virtual void onMethod(Method method, Handler h) = 0;
-    virtual void listenAll(Handler h) = 0;
+    virtual void send(const Msg& msg, const ResponseHandler& onResponse = nullptr) = 0;
+    virtual void onRequest(CtxId ctxId, MsgCode code, RequestHandler h) = 0;
+    virtual void onNotification(CtxId ctxId, MsgCode code, NotificationHandler h) = 0;
 
     // stream (async/channel)
     template<typename ... Types>
@@ -398,6 +419,11 @@ public:
     }
 };
 
+inline StreamMsg make_stream_msg(CtxId ctxId, StreamId id, StreamName name, const ByteArray& data = ByteArray())
+{
+    return StreamMsg{ id, ctxId, name, MsgType::Stream, data };
+}
+
 template<typename ... Types>
 void RpcStream<Types...>::init()
 {
@@ -409,7 +435,7 @@ void RpcStream<Types...>::init()
     case StreamType::Send: {
         m_ch.onReceive(this, [this](const Types... args) {
                 ByteArray data = RpcPacker::pack(args ...);
-                m_rpc->sendStream(StreamMsg { m_ctxId, m_name, m_streamId, data });
+                m_rpc->sendStream(make_stream_msg(m_ctxId, m_streamId, m_name, data));
             });
     } break;
     case StreamType::Receive: {
@@ -469,11 +495,12 @@ inline CallId new_call_id()
     return lastId;
 }
 
-inline Msg make_request(Method m, const ByteArray& data = ByteArray())
+inline Msg make_request(CtxId ctxId, MsgCode code, const ByteArray& data = ByteArray())
 {
     Msg msg;
     msg.callId = new_call_id();
-    msg.method = m;
+    msg.ctxId = ctxId;
+    msg.code = code;
     msg.type = MsgType::Request;
     msg.data = data;
     return msg;
@@ -484,17 +511,37 @@ inline Msg make_response(const Msg& req, const ByteArray& data = ByteArray())
     Msg msg;
     msg.ctxId = req.ctxId;
     msg.callId = req.callId;
-    msg.method = req.method;
+    msg.code = req.code;
     msg.type = MsgType::Response;
     msg.data = data;
     return msg;
 }
 
-inline Msg make_notification(Method m, const ByteArray& data = ByteArray())
+//! NOTE Service message means that the response will be sent later
+inline Msg make_response_delayed(const Msg& req)
+{
+    Msg r = make_response(req);
+    r.type = MsgType::ResponseDelayed;
+    return r;
+}
+
+inline Msg make_response_ret(const Msg& req, const Ret& ret)
+{
+    return make_response(req, RpcPacker::pack(ret));
+}
+
+template<typename T>
+inline Msg make_response_ret(const Msg& req, const RetVal<T>& ret)
+{
+    return make_response(req, RpcPacker::pack(ret));
+}
+
+inline Msg make_notification(CtxId ctxId, MsgCode code, const ByteArray& data = ByteArray())
 {
     Msg msg;
     msg.callId = new_call_id();
-    msg.method = m;
+    msg.ctxId = ctxId;
+    msg.code = code;
     msg.type = MsgType::Notification;
     msg.data = data;
     return msg;

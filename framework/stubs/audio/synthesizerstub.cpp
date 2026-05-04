@@ -34,16 +34,6 @@ void SynthesizerStub::setOutputSpec(const OutputSpec&)
 {
 }
 
-unsigned int SynthesizerStub::audioChannelsCount() const
-{
-    return 2;
-}
-
-async::Channel<unsigned int> SynthesizerStub::audioChannelsCountChanged() const
-{
-    return async::Channel<unsigned int>();
-}
-
 samples_t SynthesizerStub::process(float*, samples_t)
 {
     return 0;
@@ -80,12 +70,12 @@ async::Channel<AudioInputParams> SynthesizerStub::paramsChanged() const
     return ch;
 }
 
-msecs_t SynthesizerStub::playbackPosition() const
+TimePosition SynthesizerStub::playbackPosition() const
 {
-    return 0;
+    return TimePosition();
 }
 
-void SynthesizerStub::setPlaybackPosition(const msecs_t)
+void SynthesizerStub::setPlaybackPosition(const TimePosition&)
 {
 }
 
@@ -112,12 +102,12 @@ bool SynthesizerStub::isValid() const
     return false;
 }
 
-bool SynthesizerStub::isActive() const
+ProcessMode SynthesizerStub::mode() const
 {
-    return false;
+    return ProcessMode::Undefined;
 }
 
-void SynthesizerStub::setIsActive(bool)
+void SynthesizerStub::setMode(const ProcessMode)
 {
 }
 

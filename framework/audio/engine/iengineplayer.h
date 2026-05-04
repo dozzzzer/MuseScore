@@ -27,6 +27,7 @@
 #include "global/async/channel.h"
 
 #include "audio/common/audiotypes.h"
+#include "audio/common/timeposition.h"
 
 namespace muse::audio::engine {
 class IEnginePlayer
@@ -37,13 +38,15 @@ public:
     virtual async::Promise<Ret> prepareToPlay() = 0;
 
     virtual void play(const secs_t delay = 0) = 0;
-    virtual void seek(const secs_t newPosition, const bool flushSound = true) = 0;
+    virtual void seek(const TimePosition& position, const bool flushSound = true) = 0;
     virtual void stop() = 0;
     virtual void pause() = 0;
     virtual void resume(const secs_t delay = 0) = 0;
 
     virtual PlaybackStatus playbackStatus() const = 0;
     virtual async::Channel<PlaybackStatus> playbackStatusChanged() const = 0;
+    virtual bool isActive() const = 0;
+    virtual async::Channel<bool> isActiveChanged() const = 0;
 
     virtual secs_t duration() const = 0;
     virtual void setDuration(const secs_t duration) = 0;

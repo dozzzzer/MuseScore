@@ -4,7 +4,7 @@
 # MuseScore Studio
 # Music Composition & Notation
 #
-# Copyright (C) 2025 MuseScore Limited
+# Copyright (C) 2025 MuseScore Limited and others
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License version 3 as
@@ -188,14 +188,14 @@ fixup_qml_module_dependencies(muse_uicomponents_qml)
 
 if (OS_IS_MAC)
     target_sources(muse_uicomponents_qml PRIVATE
-        internal/platform/macos/macoschildwindowcontroller.mm
-        internal/platform/macos/macoschildwindowcontroller.h
+        internal/platform/macos/macoswindowlevelcontroller.mm
+        internal/platform/macos/macoswindowlevelcontroller.h
         internal/platform/macos/macospopupviewclosecontroller.mm
         internal/platform/macos/macospopupviewclosecontroller.h
         )
 
     set_source_files_properties(
-        internal/platform/macos/macoschildwindowcontroller.mm
+        internal/platform/macos/macoswindowlevelcontroller.mm
         internal/platform/macos/macospopupviewclosecontroller.mm
         PROPERTIES
         SKIP_UNITY_BUILD_INCLUSION ON

@@ -5,7 +5,7 @@
  * MuseScore
  * Music Composition & Notation
  *
- * Copyright (C) 2026 MuseScore Limited and others
+ * Copyright (C) 2021 MuseScore Limited and others
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 3 as
@@ -19,15 +19,20 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
+
 #pragma once
 
-class QWindow;
+#include "audio/common/audiotypes.h"
 
-namespace muse::uicomponents {
-class MacOSChildWindowController
+#include "nodes/audiosourcenode.h"
+
+namespace muse::audio::engine {
+class IGetTrackSource
 {
 public:
-    static void attachWindow(QWindow* childWindow, QWindow* parentWindow);
-    static void detachWindow(QWindow* childWindow);
+    virtual ~IGetTrackSource() = default;
+
+    virtual AudioSourceNodePtr trackSource(const TrackId trackId) const = 0;
+    virtual std::vector<AudioSourceNodePtr> allTracksSources() const = 0;
 };
 }

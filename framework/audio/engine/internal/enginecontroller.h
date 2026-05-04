@@ -27,8 +27,7 @@
 #include "../iaudioengineconfiguration.h"
 #include "../ienginecontroller.h"
 #include "../isynthresolver.h"
-#include "../iaudioengine.h"
-#include "../iengineplayback.h"
+#include "iaudioengine.h"
 #include "../itransporteventsdispatcher.h"
 
 namespace muse::audio::rpc {
@@ -44,7 +43,6 @@ class EngineController : public IEngineController
     muse::GlobalInject<IAudioEngineConfiguration> configuration;
     muse::GlobalInject<synth::ISynthResolver> synthResolver;
     muse::GlobalInject<IAudioEngine> audioEngine;
-    muse::GlobalInject<IEnginePlayback> playback;
     muse::GlobalInject<ITransportEventsDispatcher> transportEventsDispatcher;
 
 public:
@@ -58,9 +56,6 @@ public:
     async::Channel<OutputSpec> outputSpecChanged() const;
 
     void process(float* stream, unsigned samplesPerChannel);
-
-    void process();
-    void popAudioData(float* stream, unsigned samplesPerChannel);
 
 private:
     std::shared_ptr<rpc::IRpcChannel> m_rpcChannel;

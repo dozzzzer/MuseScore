@@ -22,12 +22,16 @@
 
 #pragma once
 
-#include "iaudiosource.h"
+#include <string>
 
+#include "global/async/channel.h"
 #include "global/async/notification.h"
 
+#include "audio/common/audiotypes.h"
+#include "audio/common/timeposition.h"
+
 namespace muse::audio::synth {
-class ISynthesizer : public engine::IAudioSource
+class ISynthesizer
 {
 public:
     virtual ~ISynthesizer() = default;
@@ -36,14 +40,19 @@ public:
     virtual AudioSourceType type() const = 0;
     virtual bool isValid() const = 0;
 
+    virtual void setMode(const ProcessMode mode) = 0;
+    virtual ProcessMode mode() const = 0;
+
+    virtual void setOutputSpec(const OutputSpec& spec) = 0;
+
     virtual void setup(const mpe::PlaybackData& playbackData) = 0;
     virtual const mpe::PlaybackData& playbackData() const = 0;
 
     virtual const audio::AudioInputParams& params() const = 0;
     virtual async::Channel<audio::AudioInputParams> paramsChanged() const = 0;
 
-    virtual msecs_t playbackPosition() const = 0;
-    virtual void setPlaybackPosition(const msecs_t newPosition) = 0;
+    virtual TimePosition playbackPosition() const = 0;
+    virtual void setPlaybackPosition(const TimePosition& position) = 0;
 
     virtual void prepareToPlay() = 0;
     virtual bool readyToPlay() const = 0;
@@ -56,6 +65,8 @@ public:
     virtual InputProcessingProgress inputProcessingProgress() const = 0;
 
     virtual void clearCache() = 0;
+
+    virtual samples_t process(float* buffer, samples_t samplesPerChannel) = 0;
 };
 
 using ISynthesizerPtr = std::shared_ptr<ISynthesizer>;

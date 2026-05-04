@@ -45,6 +45,7 @@ public:
     FluidSynth(const audio::AudioSourceParams& params);
 
     Ret init(const OutputSpec& spec);
+
     Ret addSoundFonts(const std::vector<io::path_t>& sfonts);
     void setPreset(const std::optional<midi::Program>& preset);
 
@@ -57,15 +58,12 @@ public:
 
     void flushSound() override; // all channels
 
-    bool isActive() const override;
-    void setIsActive(const bool isActive) override;
+    TimePosition playbackPosition() const override;
+    void setPlaybackPosition(const TimePosition& position) override;
 
-    msecs_t playbackPosition() const override;
-    void setPlaybackPosition(const msecs_t newPosition) override;
-
-    unsigned int audioChannelsCount() const override;
     samples_t process(float* buffer, samples_t samplesPerChannel) override;
-    async::Channel<unsigned int> audioChannelsCountChanged() const override;
+
+    void setMode(const ProcessMode mode) override;
     void setOutputSpec(const OutputSpec& spec) override;
 
     bool isValid() const override;
@@ -115,8 +113,6 @@ private:
 
     std::shared_ptr<Fluid> m_fluid;
     std::shared_ptr<midi::IMidiOutPort> m_midiOutPort;
-
-    async::Channel<unsigned int> m_streamsCountChanged;
 
     FluidSequencer m_sequencer;
     std::set<io::path_t> m_sfontPaths;

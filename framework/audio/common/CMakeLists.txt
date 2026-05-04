@@ -4,7 +4,7 @@
 # MuseScore Studio
 # Music Composition & Notation
 #
-# Copyright (C) 2026 MuseScore Limited
+# Copyright (C) 2026 MuseScore Limited and others
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License version 3 as
@@ -24,6 +24,7 @@ target_include_directories(muse_audio_common PRIVATE ..)
 
 target_sources(muse_audio_common PRIVATE
     audiotypes.h
+    timeposition.h
     soundfonttypes.h
     audioerrors.h
     audioutils.h
@@ -39,9 +40,6 @@ target_sources(muse_audio_common PRIVATE
     # Rpc
     rpc/irpcchannel.h
     rpc/rpcpacker.h
-    rpc/icontextrpcchannel.h
-    rpc/contextrpcchannel.cpp
-    rpc/contextrpcchannel.h
 )
 
 if(OS_IS_WASM)

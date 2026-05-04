@@ -97,9 +97,35 @@ MuseSamplerWrapper::~MuseSamplerWrapper()
     m_samplerLib->destroy(m_sampler);
 }
 
+void MuseSamplerWrapper::setMode(const muse::audio::ProcessMode mode)
+{
+    AbstractSynthesizer::setMode(mode);
+
+    if (!m_samplerLib || !m_sampler) {
+        return;
+    }
+
+    m_sequencer.updateMainStream();
+
+    const bool isOffline = m_mode == ProcessMode::PlayingOffline;
+
+    if (!isOffline && m_offlineModeStarted) {
+        m_samplerLib->stopOfflineMode(m_sampler);
+        m_offlineModeStarted = false;
+    }
+
+    if (isOffline && !m_offlineModeStarted) {
+        LOGI() << "Start offline mode, sampleRate: " << m_outputSpec.sampleRate;
+        m_samplerLib->startOfflineMode(m_sampler, m_outputSpec.sampleRate);
+        m_offlineModeStarted = true;
+    }
+
+    setIsActive(isModePlaying(mode));
+}
+
 void MuseSamplerWrapper::setOutputSpec(const audio::OutputSpec& spec)
 {
-    const bool isOffline = currentRenderMode() == RenderMode::OfflineMode;
+    const bool isOffline = m_mode == ProcessMode::PlayingOffline;
     const bool shouldReinitSampler = !m_sampler
                                      || (m_outputSpec.sampleRate != spec.sampleRate && !isOffline)
                                      || (m_outputSpec.samplesPerChannel != spec.samplesPerChannel && !isOffline);
@@ -108,27 +134,11 @@ void MuseSamplerWrapper::setOutputSpec(const audio::OutputSpec& spec)
         if (!initSampler(spec.sampleRate, spec.samplesPerChannel)) {
             return;
         }
-
-        m_samplerSampleRate = spec.sampleRate;
     }
 
     m_outputSpec = spec;
 
-    if (isOffline && !m_offlineModeStarted) {
-        LOGI() << "Start offline mode, sampleRate: " << spec.sampleRate;
-        m_samplerLib->startOfflineMode(m_sampler, spec.sampleRate);
-        m_offlineModeStarted = true;
-    }
-}
-
-unsigned int MuseSamplerWrapper::audioChannelsCount() const
-{
-    return AUDIO_CHANNELS_COUNT;
-}
-
-async::Channel<unsigned int> MuseSamplerWrapper::audioChannelsCountChanged() const
-{
-    return m_audioChannelsCountChanged;
+    setMode(m_mode);
 }
 
 samples_t MuseSamplerWrapper::process(float* buffer, samples_t samplesPerChannel)
@@ -157,12 +167,12 @@ samples_t MuseSamplerWrapper::process(float* buffer, samples_t samplesPerChannel
         }
     }
 
-    if (currentRenderMode() == RenderMode::OfflineMode) {
+    if (m_mode == ProcessMode::PlayingOffline) {
         if (m_samplerLib->processOffline(m_sampler, m_bus) != ms_Result_OK) {
             return 0;
         }
     } else {
-        if (m_samplerLib->process(m_sampler, m_bus, m_currentPosition) != ms_Result_OK) {
+        if (m_samplerLib->process(m_sampler, m_bus, m_currentPosition.samples()) != ms_Result_OK) {
             return 0;
         }
     }
@@ -170,7 +180,7 @@ samples_t MuseSamplerWrapper::process(float* buffer, samples_t samplesPerChannel
     extractOutputSamples(samplesPerChannel, buffer);
 
     if (active) {
-        m_currentPosition += samplesPerChannel;
+        m_currentPosition.forward(samplesPerChannel);
     }
 
     return samplesPerChannel;
@@ -243,22 +253,6 @@ const mpe::PlaybackData& MuseSamplerWrapper::playbackData() const
     return m_sequencer.playbackData();
 }
 
-void MuseSamplerWrapper::updateRenderingMode(const RenderMode mode)
-{
-    ONLY_AUDIO_ENGINE_THREAD;
-
-    if (!m_samplerLib || !m_sampler) {
-        return;
-    }
-
-    m_sequencer.updateMainStream();
-
-    if (mode != RenderMode::OfflineMode && m_offlineModeStarted) {
-        m_samplerLib->stopOfflineMode(m_sampler);
-        m_offlineModeStarted = false;
-    }
-}
-
 const TrackList& MuseSamplerWrapper::allTracks() const
 {
     return m_tracks;
@@ -280,16 +274,36 @@ ms_Track MuseSamplerWrapper::addTrack()
     return track;
 }
 
-msecs_t MuseSamplerWrapper::playbackPosition() const
+muse::audio::TimePosition MuseSamplerWrapper::playbackPosition() const
 {
-    return samplesToMsecs(m_currentPosition, m_outputSpec.sampleRate);
+    return m_currentPosition;
 }
 
-void MuseSamplerWrapper::setPlaybackPosition(const msecs_t newPosition)
+void MuseSamplerWrapper::setPlaybackPosition(const muse::audio::TimePosition& position)
 {
-    m_sequencer.setPlaybackPosition(newPosition);
+    IF_ASSERT_FAILED(position.isValid()) {
+        return;
+    }
 
-    setCurrentPosition(microSecsToSamples(newPosition, m_outputSpec.sampleRate));
+    //! NOTE Don't trust that msecs_t is used everywhere here,
+    // in fact, usecs_t (microseconds) is stored there.
+    const usecs_t usecs = muse::secs_to_usecs(position.time());
+    m_sequencer.setPlaybackPosition(msecs_t(usecs.raw()));
+
+    IF_ASSERT_FAILED(m_samplerLib && m_sampler) {
+        return;
+    }
+
+    if (m_currentPosition == position) {
+        return;
+    }
+
+    m_currentPosition = position;
+    m_pendingSetPosition = true;
+
+    if (isActive() || m_instrument.isOnline) {
+        doCurrentSetPosition();
+    }
 }
 
 bool MuseSamplerWrapper::isActive() const
@@ -441,7 +455,7 @@ void MuseSamplerWrapper::updateRenderingProgress(ms_RenderingRangeList list, int
         }
 
         chunksDurationUs += info._end_us - info._start_us;
-        chunks.push_back({ audio::microsecsToSecs(info._start_us), audio::microsecsToSecs(info._end_us) });
+        chunks.push_back({ muse::usecs_to_secs(info._start_us), muse::usecs_to_secs(info._end_us) });
     }
 
     // Start progress
@@ -599,28 +613,10 @@ void MuseSamplerWrapper::handleAuditionEvents(const MuseSamplerSequencer::EventT
     }
 }
 
-void MuseSamplerWrapper::setCurrentPosition(const samples_t samples)
-{
-    IF_ASSERT_FAILED(m_samplerLib && m_sampler) {
-        return;
-    }
-
-    if (m_currentPosition == samples) {
-        return;
-    }
-
-    m_currentPosition = samples;
-    m_pendingSetPosition = true;
-
-    if (isActive() || m_instrument.isOnline) {
-        doCurrentSetPosition();
-    }
-}
-
 void MuseSamplerWrapper::doCurrentSetPosition()
 {
     //! NOTE: very CPU-intensive operation; should be called as infrequently as possible
-    m_samplerLib->setPosition(m_sampler, m_currentPosition);
+    m_samplerLib->setPosition(m_sampler, m_currentPosition.samples());
     m_pendingSetPosition = false;
 }
 

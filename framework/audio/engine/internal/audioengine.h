@@ -26,41 +26,38 @@
 #include <atomic>
 #include <mutex>
 
-#include "../iaudioengine.h"
+#include "iaudioengine.h"
 
 #include "global/types/ret.h"
 
+#include "nodes/mixernode.h"
+
 namespace muse::audio::engine {
-class AudioBuffer;
+class AudioContext;
 class AudioEngine : public IAudioEngine
 {
 public:
     AudioEngine();
     ~AudioEngine();
 
-    Ret init(const OutputSpec& outputSpec, const RenderConstraints& consts) override;
+    Ret init(const OutputSpec& outputSpec) override;
     void deinit() override;
+
+    RetVal<std::shared_ptr<IAudioContext> > addAudioContext(const AudioCtxId& ctxId) override;
+    std::shared_ptr<IAudioContext> context(const AudioCtxId& ctxId) const override;
+    void destroyContext(const AudioCtxId& ctxId) override;
 
     void setOutputSpec(const OutputSpec& outputSpec) override;
     OutputSpec outputSpec() const override;
     async::Channel<OutputSpec> outputSpecChanged() const override;
 
-    RenderMode mode() const override;
-    void setMode(const RenderMode newMode) override;
-    async::Channel<RenderMode> modeChanged() const override;
-
     void execOperation(OperationType type, const Operation& func) override;
     OperationType operation() const override;
 
-    MixerPtr mixer() const override;
-
-    void processAudioData() override;
     samples_t process(float* buffer, samples_t samplesPerChannel) override;
-    void popAudioData(float* dest, size_t sampleCount) override;
 
 private:
 
-    void updateBufferConstraints();
     samples_t fillSilent(float* buffer, samples_t samplesPerChannel);
 
     std::atomic<bool> m_inited = false;
@@ -68,16 +65,12 @@ private:
     OutputSpec m_outputSpec;
     async::Channel<OutputSpec> m_outputSpecChanged;
 
-    std::atomic<RenderMode> m_mode = RenderMode::Undefined;
-    async::Channel<RenderMode> m_modeChanged;
+    std::map<AudioCtxId, std::shared_ptr<AudioContext> > m_contexts;
+    std::shared_ptr<MixerNode> m_mixer;
 
     std::atomic<bool> m_processing = false;
     std::atomic<OperationType> m_operationType = OperationType::Undefined;
     std::mutex m_quickOperationWaitMutex;
-
-    MixerPtr m_mixer = nullptr;
-    std::shared_ptr<AudioBuffer> m_buffer = nullptr;
-    RenderConstraints m_renderConsts;
 };
 }
 

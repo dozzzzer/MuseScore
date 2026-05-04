@@ -81,7 +81,7 @@ void StartAudioController::th_setupEngine()
 
 void StartAudioController::init()
 {
-    m_rpcChannel->onMethod(rpc::Method::EngineRunning, [this](const rpc::Msg&) {
+    m_rpcChannel->onNotification(rpc::GLOBAL_CTX_ID, rpc::MsgCode::EngineRunning, [this](const rpc::Msg&) {
         soundFontController()->loadSoundFonts();
 
         m_isEngineRunning.set(true);
@@ -90,40 +90,7 @@ void StartAudioController::init()
     workmode::load();
 
 #ifndef Q_OS_WASM
-    if (workmode::mode() == workmode::WorkerMode) {
-        m_worker = std::make_shared<engine::GeneralAudioWorker>();
-        m_worker->run([this]() {
-            static bool once = false;
-            if (!once) {
-                th_setupEngine();
-
-                OutputSpec spec = m_engineController->outputSpec();
-                if (spec.isValid()) {
-                    m_worker->setInterval(spec.samplesPerChannel, spec.sampleRate);
-                }
-
-                m_engineController->outputSpecChanged().onReceive(nullptr, [this](const OutputSpec& spec) {
-                    if (spec.isValid()) {
-                        m_worker->setInterval(spec.samplesPerChannel, spec.sampleRate);
-                    }
-                });
-
-                once = true;
-            }
-
-            static const std::thread::id thisThId = std::this_thread::get_id();
-
-            //! NOTE MixerChannels can process in the thread pool
-            //! and send messages about the audio signal,
-            //! to receive them, we need to call async::processMessages here
-            async::processMessages(thisThId);
-
-            m_rpcChannel->process();
-            m_engineController->process();
-        });
-    }
-
-    if (workmode::mode() == workmode::WorkerRpcMode) {
+    if (workmode::mode() == workmode::HybridMode) {
         m_worker = std::make_shared<engine::GeneralAudioWorker>();
         m_worker->run([this]() {
             static bool once = false;
@@ -139,7 +106,6 @@ void StartAudioController::init()
             m_rpcChannel->process();
         });
     }
-
 #endif // not Q_OS_WASM
 }
 
@@ -173,16 +139,7 @@ void StartAudioController::startAudioProcessing(const IApplication::RunMode& mod
         std::memset(stream, 0, byteCount);
         // driver metrics
         const size_t driverSamplesTotal = byteCount / sizeof(float);
-        const size_t driverSamplesPerChannel = driverSamplesTotal / 2;
         float* driverDest = reinterpret_cast<float*>(stream);
-
-        //! NOTE In this mode, an alignment buffer is not needed.
-        if (workmode::mode() == workmode::WorkerMode) {
-            if (m_engineController) {
-                m_engineController->popAudioData(driverDest, (unsigned)driverSamplesPerChannel);
-            }
-            return;
-        }
 
         const size_t requiredSamplesTotal = m_requiredSamplesTotal;
         const bool useAlignBuffer = driverSamplesTotal < requiredSamplesTotal;
@@ -226,7 +183,7 @@ void StartAudioController::startAudioProcessing(const IApplication::RunMode& mod
         }
 
         // process
-        if (workmode::mode() == workmode::WorkerRpcMode) {
+        if (workmode::mode() == workmode::HybridMode) {
             m_engineController->process(procDest, (unsigned)procSamplesPerChannel);
         } else if (workmode::mode() == workmode::DriverMode) {
             static bool once = false;
@@ -237,6 +194,8 @@ void StartAudioController::startAudioProcessing(const IApplication::RunMode& mod
 
             m_rpcChannel->process();
             m_engineController->process(procDest, (unsigned)procSamplesPerChannel);
+        } else {
+            UNREACHABLE;
         }
 
         // write temp and fill driver dest
@@ -264,7 +223,8 @@ void StartAudioController::startAudioProcessing(const IApplication::RunMode& mod
 
     AudioEngineConfig conf = configuration()->engineConfig();
     auto sendEngineInit = [this, activeSpec, conf]() {
-        m_rpcChannel->send(rpc::make_request(Method::EngineInit, RpcPacker::pack(activeSpec.output, conf)), [this](const Msg&) {
+        m_rpcChannel->send(rpc::make_request(rpc::GLOBAL_CTX_ID, MsgCode::EngineInit, RpcPacker::pack(activeSpec.output, conf)),
+                           [this](const Msg&) {
             m_isAudioStarted.set(true);
         });
     };
@@ -283,13 +243,14 @@ void StartAudioController::startAudioProcessing(const IApplication::RunMode& mod
 void StartAudioController::stopAudioProcessing()
 {
 #ifndef Q_OS_WASM
-    if (m_isAudioStarted.val) {
-        m_rpcChannel->send(rpc::make_request(Method::EngineDeinit), [this](const Msg&) {
+    m_rpcChannel->send(rpc::make_request(rpc::GLOBAL_CTX_ID, MsgCode::EngineDeinit), [this](const Msg&) {
+        if (m_isAudioStarted.val) {
             m_isAudioStarted.set(false);
-        });
-    }
+        }
+    });
 
-    while (m_isAudioStarted.val) {
+    do {
+        // Ensure that RPC process() is called at least once
         m_rpcChannel->process();
 
         if (!m_isAudioStarted.val) {
@@ -299,7 +260,7 @@ void StartAudioController::stopAudioProcessing()
         std::this_thread::yield();
         using namespace std::chrono_literals;
         std::this_thread::sleep_for(10ms);
-    }
+    } while (m_isAudioStarted.val);
 
     audioDriverController()->close();
 

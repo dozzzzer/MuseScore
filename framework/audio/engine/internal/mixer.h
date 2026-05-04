@@ -23,42 +23,37 @@
 #pragma once
 
 #include <memory>
-#include <map>
 
 #include "global/modularity/ioc.h"
 #include "global/async/asyncable.h"
-#include "global/types/retval.h"
-
-#include "abstractaudiosource.h"
 
 #include "../iplayhead.h"
-#include "../ifxresolver.h"
+#include "iaudiofactory.h"
 
 #include "mixerchannel.h"
-#include "igetplaybackposition.h"
-#include "audiosignalnotifier.h"
+#include "nodes/fxnode.h"
+#include "nodes/controlnode.h"
+#include "nodes/signalnode.h"
 
 namespace muse {
 class TaskScheduler;
 }
 
 namespace muse::audio::engine {
-class Mixer : public AbstractAudioSource, public IGetPlaybackPosition, public async::Asyncable, public std::enable_shared_from_this<Mixer>
+class Mixer : public AudioNode, public async::Asyncable
 {
-    GlobalInject<fx::IFxResolver> fxResolver;
+    GlobalInject<IAudioFactory> audioFactory;
 
 public:
     ~Mixer() override;
 
-    void init(size_t desiredAudioThreadNumber, size_t minTrackCountForMultithreading);
+    void init();
 
-    IAudioSourcePtr mixedSource();
-
-    RetVal<MixerChannelPtr> addChannel(const TrackId trackId, ITrackAudioInputPtr source);
-    RetVal<MixerChannelPtr> addAuxChannel(const TrackId trackId);
+    Ret addChannel(AudioOutputNodePtr output);
+    Ret addAuxChannel(AudioOutputNodePtr output);
     Ret removeChannel(const TrackId trackId);
 
-    void setPlayhead(std::shared_ptr<IPlayhead> playhead);
+    void setPlayhead(PlayheadPtr playhead);
 
     AudioOutputParams masterOutputParams() const;
     void setMasterOutputParams(const AudioOutputParams& params);
@@ -70,27 +65,22 @@ public:
     void setIsIdle(bool idle);
     void setTracksToProcessWhenIdle(const std::unordered_set<TrackId>& trackIds);
 
-    // IAudioSource
-    void setOutputSpec(const OutputSpec& spec) override;
-    unsigned int audioChannelsCount() const override;
-
-    void setIsActive(bool arg) override;
-
-    samples_t process(float* outBuffer, samples_t samplesPerChannel) override;
-
 private:
-    using TracksData = std::map<TrackId, std::vector<float> >;
 
-    const TimePosition& playbackPosition() const override;
+    void onOutputSpecChanged(const OutputSpec& spec) override;
+    void onModeChanged(const ProcessMode mode) override;
 
-    void processTrackChannels(size_t outBufferSize, size_t samplesPerChannel, TracksData& outTracksData);
+    void doProcess(float* buffer, samples_t samplesPerChannel) override;
+    void doSelfProcess(float* buffer, samples_t samplesPerChannel) override;
+
+    void processTrackChannels(size_t outBufferSize, size_t samplesPerChannel);
     void mixOutputFromChannel(float* outBuffer, const float* inBuffer, unsigned int samplesCount) const;
     void prepareAuxBuffers(size_t outBufferSize);
     void writeTrackToAuxBuffers(const float* trackBuffer, const AuxSendsParams& auxSends, samples_t samplesPerChannel);
     void processAuxChannels(float* buffer, samples_t samplesPerChannel);
     void processMasterFx(float* buffer, samples_t samplesPerChannel);
-    void completeOutput(float* buffer, samples_t samplesPerChannel);
 
+    void updateNonMutedTrackCount();
     bool useMultithreading() const;
 
     void updateShouldProcessMasterFxDuringSilence();
@@ -100,14 +90,21 @@ private:
 
     TaskScheduler* m_taskScheduler = nullptr;
 
-    size_t m_minTrackCountForMultithreading = 0;
     size_t m_nonMutedTrackCount = 0;
 
     AudioOutputParams m_masterParams;
     async::Channel<AudioOutputParams> m_masterOutputParamsChanged;
-    std::vector<IFxProcessorPtr> m_masterFxProcessors = {};
+    std::vector<FxNodePtr> m_masterFxNodes;
 
-    std::map<TrackId, MixerChannelPtr> m_trackChannels = {};
+    struct TrackData {
+        TrackId trackId;
+        MixerChannelPtr channel;
+        std::vector<float> buffer;
+        bool processed = false;
+    };
+
+    std::vector<TrackData> m_tracks;
+
     std::unordered_set<TrackId> m_tracksToProcessWhenIdle;
 
     struct AuxChannelInfo {
@@ -120,9 +117,10 @@ private:
 
     std::shared_ptr<IPlayhead> m_playhead;
 
-    mutable AudioSignalsNotifier m_audioSignalNotifier;
+    bool m_chainProcessing = false;
+    SignalNodePtr m_signalNode;
+    ControlNodePtr m_controlNode;
 
-    bool m_isSilence = false;
     bool m_shouldProcessMasterFxDuringSilence = false;
     bool m_isIdle = false;
 };

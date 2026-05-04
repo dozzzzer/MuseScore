@@ -5,7 +5,7 @@
  * MuseScore
  * Music Composition & Notation
  *
- * Copyright (C) 2025 MuseScore Limited and others
+ * Copyright (C) 2026 MuseScore Limited and others
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 3 as
@@ -21,29 +21,27 @@
  */
 #pragma once
 
-#include "global/modularity/imoduleinterface.h"
 #include "global/types/retval.h"
 #include "global/async/promise.h"
-
+#include "global/async/channel.h"
 #include "audio/common/audiotypes.h"
 
-namespace muse::io {
-class IODevice;
-}
-
 namespace muse::audio::engine {
-class IEnginePlayback : MODULE_GLOBAL_INTERFACE
+class IAudioContext
 {
-    INTERFACE_ID(IEnginePlayback)
 public:
-    virtual ~IEnginePlayback() = default;
+    virtual ~IAudioContext() = default;
 
-    virtual void init() = 0;
+    virtual AudioCtxId id() const = 0;
+
+    // Init
+    virtual Ret init() = 0;
     virtual void deinit() = 0;
 
-    // 2. Setup tracks
-    virtual RetVal<TrackIdList> trackIdList() const = 0;
-    virtual RetVal<TrackName> trackName(const TrackId trackId) const = 0;
+    // Config
+    virtual void setMode(const ProcessMode newMode) = 0;
+
+    // Tracks
     virtual RetVal2<TrackId, AudioParams> addTrack(const TrackName& trackName, io::IODevice* playbackData, const AudioParams& params) = 0;
     virtual RetVal2<TrackId, AudioParams> addTrack(const TrackName& trackName, const mpe::PlaybackData& playbackData,
                                                    const AudioParams& params) = 0;
@@ -55,6 +53,10 @@ public:
     virtual async::Channel<TrackId> trackAdded() const = 0;
     virtual async::Channel<TrackId> trackRemoved() const = 0;
 
+    virtual RetVal<TrackIdList> trackIdList() const = 0;
+    virtual RetVal<TrackName> trackName(const TrackId trackId) const = 0;
+
+    // Sources
     virtual AudioResourceMetaList availableInputResources() const = 0;
     virtual SoundPresetList availableSoundPresets(const AudioResourceMeta& resourceMeta) const = 0;
 
@@ -68,7 +70,23 @@ public:
     virtual void clearCache(const TrackId trackId) const = 0;
     virtual void clearSources() = 0;
 
-    // 3. Play
+    // Outputs
+    virtual AudioResourceMetaList availableOutputResources() const = 0;
+
+    virtual RetVal<AudioOutputParams> outputParams(const TrackId trackId) const = 0;
+    virtual void setOutputParams(const TrackId trackId, const AudioOutputParams& params) = 0;
+    virtual async::Channel<TrackId, AudioOutputParams> outputParamsChanged() const = 0;
+    virtual RetVal<AudioSignalChanges> signalChanges(const TrackId trackId) const = 0;
+
+    virtual RetVal<AudioOutputParams> masterOutputParams() const = 0;
+    virtual void setMasterOutputParams(const AudioOutputParams& params) = 0;
+    virtual void clearMasterOutputParams() = 0;
+    virtual async::Channel<AudioOutputParams> masterOutputParamsChanged() const = 0;
+    virtual RetVal<AudioSignalChanges> masterSignalChanges() const = 0;
+
+    virtual void clearAllFx() = 0;
+
+    // Play
     virtual async::Promise<Ret> prepareToPlay() = 0;
 
     virtual void play(const secs_t delay = 0.0) = 0;
@@ -86,26 +104,9 @@ public:
     virtual secs_t playbackPosition() const = 0;
     virtual async::Channel<secs_t> playbackPositionChanged() const = 0;
 
-    // 4. Adjust output
-    virtual RetVal<AudioOutputParams> outputParams(const TrackId trackId) const = 0;
-    virtual void setOutputParams(const TrackId trackId, const AudioOutputParams& params) = 0;
-    virtual async::Channel<TrackId, AudioOutputParams> outputParamsChanged() const = 0;
-
-    virtual RetVal<AudioOutputParams> masterOutputParams() const = 0;
-    virtual void setMasterOutputParams(const AudioOutputParams& params) = 0;
-    virtual void clearMasterOutputParams() = 0;
-    virtual async::Channel<AudioOutputParams> masterOutputParamsChanged() const = 0;
-
-    virtual AudioResourceMetaList availableOutputResources() const = 0;
-
-    virtual RetVal<AudioSignalChanges> signalChanges(const TrackId trackId) const = 0;
-    virtual RetVal<AudioSignalChanges> masterSignalChanges() const = 0;
-
+    // Export
     virtual async::Promise<Ret> saveSoundTrack(io::IODevice& dstDevice, const SoundTrackFormat& format) = 0;
-    virtual void abortSavingAllSoundTracks() = 0;
-
     virtual SaveSoundTrackProgress saveSoundTrackProgressChanged() const = 0;
-
-    virtual void clearAllFx() = 0;
+    virtual void abortSavingAllSoundTracks() = 0;
 };
 }

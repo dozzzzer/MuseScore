@@ -20,7 +20,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-#include "eventaudiosource.h"
+#include "eventaudionode.h"
 
 #include "audio/common/audiosanitizer.h"
 
@@ -32,57 +32,41 @@ using namespace muse::audio::engine;
 using namespace muse::audio::synth;
 using namespace muse::mpe;
 
-EventAudioSource::EventAudioSource(const TrackId trackId,
-                                   const mpe::PlaybackData& playbackData,
-                                   OnOffStreamEventsReceived onOffStreamReceived)
+EventAudioNode::EventAudioNode(TrackId trackId, const mpe::PlaybackData& playbackData,
+                               OnOffStreamEventsReceived onOffStreamReceived)
     : m_trackId(trackId), m_playbackData(playbackData)
 {
     ONLY_AUDIO_ENGINE_THREAD;
 
-    m_playbackData.offStream.onReceive(this, [onOffStreamReceived, trackId](const PlaybackEventsMap&,
-                                                                            const DynamicLevelLayers&,
-                                                                            bool) {
-        onOffStreamReceived(trackId);
-    });
+    if (onOffStreamReceived) {
+        m_playbackData.offStream.onReceive(this, [onOffStreamReceived](const PlaybackEventsMap&,
+                                                                       const DynamicLevelLayers&,
+                                                                       bool) {
+            onOffStreamReceived();
+        });
+    }
 }
 
-EventAudioSource::~EventAudioSource()
+EventAudioNode::~EventAudioNode()
 {
     m_playbackData.offStream.disconnect(this);
 }
 
-bool EventAudioSource::isActive() const
+void EventAudioNode::onModeChanged(const ProcessMode mode)
 {
     ONLY_AUDIO_ENGINE_THREAD;
 
     if (!m_synth) {
-        return false;
-    }
-
-    return m_synth->isActive();
-}
-
-void EventAudioSource::setIsActive(const bool active)
-{
-    ONLY_AUDIO_ENGINE_THREAD;
-
-    IF_ASSERT_FAILED(m_synth) {
         return;
     }
 
-    if (m_synth->isActive() == active) {
-        return;
-    }
-
-    m_synth->setIsActive(active);
+    m_synth->setMode(mode);
     m_synth->flushSound();
 }
 
-void EventAudioSource::setOutputSpec(const OutputSpec& spec)
+void EventAudioNode::onOutputSpecChanged(const OutputSpec& spec)
 {
     ONLY_AUDIO_ENGINE_THREAD;
-    m_outputSpec = spec;
-
     if (!m_synth) {
         return;
     }
@@ -90,40 +74,17 @@ void EventAudioSource::setOutputSpec(const OutputSpec& spec)
     m_synth->setOutputSpec(spec);
 }
 
-unsigned int EventAudioSource::audioChannelsCount() const
+void EventAudioNode::doSelfProcess(float* buffer, samples_t samplesPerChannel)
 {
-    ONLY_AUDIO_ENGINE_THREAD;
-
+    ONLY_AUDIO_PROC_THREAD;
     if (!m_synth) {
-        return 0;
+        return;
     }
 
-    return m_synth->audioChannelsCount();
+    m_synth->process(buffer, samplesPerChannel);
 }
 
-async::Channel<unsigned int> EventAudioSource::audioChannelsCountChanged() const
-{
-    ONLY_AUDIO_ENGINE_THREAD;
-
-    IF_ASSERT_FAILED(m_synth) {
-        return {};
-    }
-
-    return m_synth->audioChannelsCountChanged();
-}
-
-samples_t EventAudioSource::process(float* buffer, samples_t samplesPerChannel)
-{
-    ONLY_AUDIO_ENGINE_THREAD;
-
-    if (!m_synth) {
-        return 0;
-    }
-
-    return m_synth->process(buffer, samplesPerChannel);
-}
-
-void EventAudioSource::seek(const msecs_t newPositionMsecs, const bool flushSound)
+void EventAudioNode::seek(const TimePosition& position, const bool flushSound)
 {
     ONLY_AUDIO_ENGINE_THREAD;
 
@@ -131,18 +92,18 @@ void EventAudioSource::seek(const msecs_t newPositionMsecs, const bool flushSoun
         return;
     }
 
-    if (m_synth->playbackPosition() == newPositionMsecs) {
+    if (m_synth->playbackPosition() == position) {
         return;
     }
 
-    m_synth->setPlaybackPosition(newPositionMsecs);
+    m_synth->setPlaybackPosition(position);
 
     if (flushSound) {
         m_synth->flushSound();
     }
 }
 
-void EventAudioSource::flush()
+void EventAudioNode::flush()
 {
     ONLY_AUDIO_ENGINE_THREAD;
 
@@ -153,12 +114,12 @@ void EventAudioSource::flush()
     m_synth->flushSound();
 }
 
-const AudioInputParams& EventAudioSource::inputParams() const
+const AudioInputParams& EventAudioNode::inputParams() const
 {
     return m_params;
 }
 
-void EventAudioSource::applyInputParams(const AudioInputParams& requiredParams)
+void EventAudioNode::applyInputParams(const AudioInputParams& requiredParams)
 {
     IF_ASSERT_FAILED(m_outputSpec.isValid()) {
         return;
@@ -174,15 +135,17 @@ void EventAudioSource::applyInputParams(const AudioInputParams& requiredParams)
         m_playbackData = m_synth->playbackData();
     }
 
-    m_synth = synthResolver()->resolveSynth(m_trackId, requiredParams, m_outputSpec, m_playbackData.setupData);
+    RetVal<synth::ISynthesizerPtr> synth = audioFactory()->makeSynth(m_trackId, requiredParams, m_playbackData.setupData);
 
-    if (!m_synth) {
-        m_synth = synthResolver()->resolveDefaultSynth(m_trackId);
-        IF_ASSERT_FAILED(m_synth) {
+    if (!synth.ret) {
+        synth = audioFactory()->makeDefaultSynth(m_trackId);
+        IF_ASSERT_FAILED(synth.val) {
             LOGE() << "Default synth not found!";
             return;
         }
     }
+
+    m_synth = synth.val;
 
     m_synth->paramsChanged().onReceive(this, [this](const AudioInputParams& params) {
         m_paramsChanges.send(params);
@@ -193,19 +156,19 @@ void EventAudioSource::applyInputParams(const AudioInputParams& requiredParams)
     if (ctx.isValid()) {
         restoreSynthCtx(ctx);
     } else {
-        m_synth->setIsActive(false);
+        m_synth->setMode(ProcessMode::Idle);
     }
 
     m_params = m_synth->params();
     m_paramsChanges.send(m_params);
 }
 
-async::Channel<AudioInputParams> EventAudioSource::inputParamsChanged() const
+async::Channel<AudioInputParams> EventAudioNode::inputParamsChanged() const
 {
     return m_paramsChanges;
 }
 
-void EventAudioSource::prepareToPlay()
+void EventAudioNode::prepareToPlay()
 {
     ONLY_AUDIO_ENGINE_THREAD;
 
@@ -216,7 +179,7 @@ void EventAudioSource::prepareToPlay()
     m_synth->prepareToPlay();
 }
 
-bool EventAudioSource::readyToPlay() const
+bool EventAudioNode::readyToPlay() const
 {
     ONLY_AUDIO_ENGINE_THREAD;
 
@@ -227,7 +190,7 @@ bool EventAudioSource::readyToPlay() const
     return m_synth->readyToPlay();
 }
 
-async::Notification EventAudioSource::readyToPlayChanged() const
+async::Notification EventAudioNode::readyToPlayChanged() const
 {
     ONLY_AUDIO_ENGINE_THREAD;
 
@@ -238,7 +201,7 @@ async::Notification EventAudioSource::readyToPlayChanged() const
     return m_synth->readyToPlayChanged();
 }
 
-bool EventAudioSource::hasPendingChunks() const
+bool EventAudioNode::hasPendingChunks() const
 {
     ONLY_AUDIO_ENGINE_THREAD;
 
@@ -249,7 +212,7 @@ bool EventAudioSource::hasPendingChunks() const
     return m_synth->hasPendingChunks();
 }
 
-void EventAudioSource::processInput()
+void EventAudioNode::processInput()
 {
     ONLY_AUDIO_ENGINE_THREAD;
 
@@ -260,7 +223,7 @@ void EventAudioSource::processInput()
     m_synth->processInput();
 }
 
-InputProcessingProgress EventAudioSource::inputProcessingProgress() const
+InputProcessingProgress EventAudioNode::inputProcessingProgress() const
 {
     ONLY_AUDIO_ENGINE_THREAD;
 
@@ -271,7 +234,7 @@ InputProcessingProgress EventAudioSource::inputProcessingProgress() const
     return m_synth->inputProcessingProgress();
 }
 
-void EventAudioSource::clearCache()
+void EventAudioNode::clearCache()
 {
     ONLY_AUDIO_ENGINE_THREAD;
 
@@ -282,22 +245,22 @@ void EventAudioSource::clearCache()
     m_synth->clearCache();
 }
 
-EventAudioSource::SynthCtx EventAudioSource::currentSynthCtx() const
+EventAudioNode::SynthCtx EventAudioNode::currentSynthCtx() const
 {
     if (!m_synth) {
         return SynthCtx();
     }
 
-    return { m_synth->isActive(), m_synth->playbackPosition() };
+    return { m_synth->mode(), m_synth->playbackPosition() };
 }
 
-void EventAudioSource::restoreSynthCtx(const SynthCtx& ctx)
+void EventAudioNode::restoreSynthCtx(const SynthCtx& ctx)
 {
     m_synth->setPlaybackPosition(ctx.playbackPosition);
-    m_synth->setIsActive(ctx.isActive);
+    m_synth->setMode(ctx.mode);
 }
 
-void EventAudioSource::setupSource()
+void EventAudioNode::setupSource()
 {
     ONLY_AUDIO_ENGINE_THREAD;
 

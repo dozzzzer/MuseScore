@@ -5,7 +5,7 @@
  * MuseScore
  * Music Composition & Notation
  *
- * Copyright (C) 2021 MuseScore Limited and others
+ * Copyright (C) 2026 MuseScore Limited and others
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 3 as
@@ -20,22 +20,19 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-#ifndef MUSE_AUDIO_IGETTRACKS_H
-#define MUSE_AUDIO_IGETTRACKS_H
+#include "playheadnode.h"
 
-#include "audio/common/audiotypes.h"
+using namespace muse;
+using namespace muse::audio;
+using namespace muse::audio::engine;
 
-#include "track.h"
-
-namespace muse::audio::engine {
-class IGetTracks
+PlayheadNode::PlayheadNode(PlayheadPtr playhead)
+    : m_playhead(playhead)
 {
-public:
-    virtual ~IGetTracks() = default;
-
-    virtual TrackPtr track(const TrackId id) const = 0;
-    virtual const TracksMap& allTracks() const = 0;
-};
+    assert(m_playhead && "PlayheadNode requires a non-null Playhead");
 }
 
-#endif // MUSE_AUDIO_IGETTRACKS_H
+void PlayheadNode::doSelfProcess(float*, samples_t samplesPerChannel)
+{
+    m_playhead->forward(TimePosition::fromSamples(samplesPerChannel, m_outputSpec.sampleRate));
+}

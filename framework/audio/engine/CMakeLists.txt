@@ -4,7 +4,7 @@
 # MuseScore Studio
 # Music Composition & Notation
 #
-# Copyright (C) 2026 MuseScore Limited
+# Copyright (C) 2026 MuseScore Limited and others
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License version 3 as
@@ -37,8 +37,6 @@ else()
         
         iaudioengineconfiguration.h
         ienginecontroller.h
-        iengineplayback.h
-        iaudioengine.h
         iaudiosource.h
         iplayhead.h
         iengineplayer.h
@@ -50,33 +48,32 @@ else()
         itransporteventsdispatcher.h
 
         # internal
+        internal/iaudioengine.h
+        internal/iaudiocontext.h
+        internal/iaudiofactory.h
+        internal/igettracksource.h
+        internal/audioengine.cpp
+        internal/audioengine.h
+        internal/audiocontext.cpp
+        internal/audiocontext.h
+        internal/audiofactory.cpp
+        internal/audiofactory.h
         internal/audioengineconfiguration.cpp
         internal/audioengineconfiguration.h
         internal/enginecontroller.cpp
         internal/enginecontroller.h
-        internal/engineplayback.cpp
-        internal/engineplayback.h
-        internal/igettracks.h
         internal/enginerpccontroller.cpp
         internal/enginerpccontroller.h
-        internal/audioengine.cpp
-        internal/audioengine.h
-        internal/audiobuffer.cpp
-        internal/audiobuffer.h
         internal/mixer.cpp
         internal/mixer.h
         internal/mixerchannel.cpp
         internal/mixerchannel.h
-        internal/igetplaybackposition.h
-        internal/engineplayer.cpp
-        internal/engineplayer.h
+        internal/contextplayer.cpp
+        internal/contextplayer.h
         internal/samplerateconvertor.cpp
         internal/samplerateconvertor.h
-        internal/track.h
         internal/abstractaudiosource.cpp
         internal/abstractaudiosource.h
-        internal/eventaudiosource.cpp
-        internal/eventaudiosource.h
         internal/sinesource.cpp
         internal/sinesource.h
         # internal/noisesource.cpp
@@ -85,6 +82,26 @@ else()
         internal/audiosignalnotifier.h
         internal/transporteventsdispatcher.cpp
         internal/transporteventsdispatcher.h
+
+        # Nodes
+        internal/nodes/audionode.cpp
+        internal/nodes/audionode.h
+        internal/nodes/audiosourcenode.cpp
+        internal/nodes/audiosourcenode.h
+        internal/nodes/audiooutputnode.cpp
+        internal/nodes/audiooutputnode.h
+        internal/nodes/mixernode.cpp
+        internal/nodes/mixernode.h
+        internal/nodes/eventaudionode.cpp
+        internal/nodes/eventaudionode.h
+        internal/nodes/fxnode.cpp
+        internal/nodes/fxnode.h
+        internal/nodes/controlnode.cpp
+        internal/nodes/controlnode.h
+        internal/nodes/signalnode.cpp
+        internal/nodes/signalnode.h
+        internal/nodes/playheadnode.cpp
+        internal/nodes/playheadnode.h
 
         # DSP
         internal/dsp/envelopefilterconfig.h

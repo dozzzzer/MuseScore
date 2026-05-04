@@ -5,7 +5,7 @@
  * MuseScore
  * Music Composition & Notation
  *
- * Copyright (C) 2025 MuseScore BVBA and others
+ * Copyright (C) 2026 MuseScore Limited and others
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 3 as
@@ -22,14 +22,25 @@
 
 #pragma once
 
-#include "audio/common/audiotypes.h"
+#include <vector>
+#include <memory>
+
+#include "audionode.h"
 
 namespace muse::audio::engine {
-class IGetPlaybackPosition
+class MixerNode : public AudioNode
 {
-public:
-    virtual ~IGetPlaybackPosition() = default;
+protected:
+    void onOutputSpecChanged(const OutputSpec& spec) override;
+    void onModeChanged(const ProcessMode mode) override;
 
-    virtual const TimePosition& playbackPosition() const = 0;
+    void doAddNode(std::shared_ptr<AudioNode> other) override;
+    void doRemoveNode(std::shared_ptr<AudioNode> other) override;
+
+    void doProcess(float* buffer, samples_t samplesPerChannel) override;
+    void doSelfProcess(float* buffer, samples_t samplesPerChannel) override;
+
+    std::vector<std::shared_ptr<AudioNode> > m_inputs;
+    std::vector<float> m_buffer;
 };
 }
