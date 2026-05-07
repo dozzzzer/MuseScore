@@ -223,12 +223,14 @@ void WorkspaceListModel::resetWorkspace(int workspaceIndex)
 
     int resetButton = static_cast<int>(IInteractive::Button::CustomButton) + 1;
     std::string question = muse::trc("workspace",
-                                     "This action will reset your workspace to its factory default layout and cannot be undone. Do you want to continue?");
+                                     "This will reset your workspace to its factory default layout. This cannot be undone.");
 
-    auto promise = interactive()->warning(muse::trc("workspace", "Resetting workspaces"), question, {
+    auto promise = interactive()->warning(muse::trc("workspace", "Reset workspace?"), question, {
         IInteractive::ButtonData(resetButton, muse::trc("workspace", "Reset workspace"), true, false, IInteractive::ButtonRole::AcceptRole),
         interactive()->buttonData(IInteractive::Button::Cancel)
-    });
+    },
+    int(IInteractive::Button::NoButton), { IInteractive::Option::WithIcon },
+    muse::trc("workspace", "Reset workspace"));
 
     promise.onResolve(this, [this, resetButton, workspaceIndex](const IInteractive::Result& res) {
         if (res.isButton(resetButton)) {

@@ -31,6 +31,8 @@ import "internal"
 StyledDialogView {
     id: root
 
+    title: qsTrc("workspace", "Create new workspace")
+
     property string workspaceNames: ""
 
     contentWidth: 552
